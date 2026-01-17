@@ -1,33 +1,21 @@
-/* Person 2: LCD Interface and Buzzer Notification System */
+/* Actuator Control (Servo & Status LEDs) */
 #include "main.h"
-#include "i2c-lcd.h"
-#include <stdio.h>
 
-void Update_Fill_Level(uint32_t now) {
-    if (now - last_fill_time > 500) {
-        float raw_dist = HCSR04_Read(TRIG2_GPIO_Port, TRIG2_Pin, ECHO2_GPIO_Port, ECHO2_Pin);
-        if (raw_dist < 0) raw_dist = 16.0f;
+void Update_Servo_Position(uint32_t now) {
+    if (now - last_servo_move > 15) {
+        if (current_pos < target_pos) current_pos += 20;
+        else if (current_pos > target_pos) current_pos -= 20;
 
-        FillDistance = (uint16_t)raw_dist;
-        FillPercentage = 100 - (((FillDistance - 3) * 100) / (16 - 3));
-        if (FillPercentage < 0) FillPercentage = 0;
-        if (FillPercentage > 100) FillPercentage = 100;
+        // Safety clamp for SG90 servo
+        if (current_pos < 500)  current_pos = 500;
+        if (current_pos > 2500) current_pos = 2500;
 
-        char fillBuffer[16];
-        sprintf(fillBuffer, "Fill: %d%%      ", FillPercentage);
-        lcd_gotoxy(&my_lcd, 0, 1);
-        lcd_puts(&my_lcd, fillBuffer);
-        
-        last_fill_time = now;
+        __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, current_pos);
+        last_servo_move = now;
     }
 }
 
-void Process_Buzzer(uint32_t now) {
-    if (buzzer_beeps_remaining > 0 && now >= buzzer_next_toggle) {
-        HAL_GPIO_TogglePin(BUZZER_GPIO_Port, BUZZER_Pin);
-        buzzer_beeps_remaining--;
-        buzzer_next_toggle = now + buzzer_interval;
-    } else if (buzzer_beeps_remaining == 0) {
-        HAL_GPIO_WritePin(BUZZER_GPIO_Port, BUZZER_Pin, GPIO_PIN_RESET);
-    }
+void Set_Bin_Indicators(uint8_t open) {
+    HAL_GPIO_WritePin(LED_OPEN_GPIO_Port, LED_OPEN_Pin, open ? GPIO_PIN_SET : GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(LED_CLOSED_GPIO_Port, LED_CLOSED_Pin, open ? GPIO_PIN_RESET : GPIO_PIN_SET);
 }
