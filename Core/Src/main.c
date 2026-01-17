@@ -1,30 +1,33 @@
-/* Sensor Drivers and Implementation */
+/* Person 2: LCD Interface and Buzzer Notification System */
 #include "main.h"
+#include "i2c-lcd.h"
+#include <stdio.h>
 
-// Private function prototypes 
-float HCSR04_Read(GPIO_TypeDef* TRIG_PORT, uint16_t TRIG_PIN, GPIO_TypeDef* ECHO_PORT, uint16_t ECHO_PIN);
+void Update_Fill_Level(uint32_t now) {
+    if (now - last_fill_time > 500) {
+        float raw_dist = HCSR04_Read(TRIG2_GPIO_Port, TRIG2_Pin, ECHO2_GPIO_Port, ECHO2_Pin);
+        if (raw_dist < 0) raw_dist = 16.0f;
 
-// Ultrasonic sensor reading function using microsecond timer
-float HCSR04_Read(GPIO_TypeDef* TRIG_PORT, uint16_t TRIG_PIN, GPIO_TypeDef* ECHO_PORT, uint16_t ECHO_PIN) {
-    // 1. Send 10us Trigger
-    HAL_GPIO_WritePin(TRIG_PORT, TRIG_PIN, GPIO_PIN_SET);
-    __HAL_TIM_SET_COUNTER(&htim3, 0);
-    while (__HAL_TIM_GET_COUNTER(&htim3) < 10);
-    HAL_GPIO_WritePin(TRIG_PORT, TRIG_PIN, GPIO_PIN_RESET);
+        FillDistance = (uint16_t)raw_dist;
+        FillPercentage = 100 - (((FillDistance - 3) * 100) / (16 - 3));
+        if (FillPercentage < 0) FillPercentage = 0;
+        if (FillPercentage > 100) FillPercentage = 100;
 
-    // 2. Wait for Echo to go HIGH
-    uint32_t timeout = 2000;
-    while (HAL_GPIO_ReadPin(ECHO_PORT, ECHO_PIN) == GPIO_PIN_RESET && timeout > 0) timeout--;
-    if (timeout == 0) return -1.0f;
+        char fillBuffer[16];
+        sprintf(fillBuffer, "Fill: %d%%      ", FillPercentage);
+        lcd_gotoxy(&my_lcd, 0, 1);
+        lcd_puts(&my_lcd, fillBuffer);
+        
+        last_fill_time = now;
+    }
+}
 
-    uint32_t t_start = __HAL_TIM_GET_COUNTER(&htim3);
-
-    // 3. Wait for Echo to go LOW
-    timeout = 30000;
-    while (HAL_GPIO_ReadPin(ECHO_PORT, ECHO_PIN) == GPIO_PIN_SET && timeout > 0) timeout--;
-    uint32_t t_stop = __HAL_TIM_GET_COUNTER(&htim3);
-
-    // 4. Calculate distance
-    uint32_t diff = (t_stop >= t_start) ? (t_stop - t_start) : (65535 - t_start + t_stop);
-    return (float)(diff * 0.034f / 2.0f);
+void Process_Buzzer(uint32_t now) {
+    if (buzzer_beeps_remaining > 0 && now >= buzzer_next_toggle) {
+        HAL_GPIO_TogglePin(BUZZER_GPIO_Port, BUZZER_Pin);
+        buzzer_beeps_remaining--;
+        buzzer_next_toggle = now + buzzer_interval;
+    } else if (buzzer_beeps_remaining == 0) {
+        HAL_GPIO_WritePin(BUZZER_GPIO_Port, BUZZER_Pin, GPIO_PIN_RESET);
+    }
 }
